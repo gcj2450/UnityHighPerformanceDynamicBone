@@ -4,31 +4,31 @@ using UnityEngine;
 using Unity.Mathematics;
 using UnityEngine.Jobs;
 using UnityEngine.Serialization;
-
 namespace HighPerformanceDynamicBone
 {
-    public enum Direction
+
+    public enum DynamicBoneDirection
     {
         X,
         Y,
         Z
     }
 
-    public enum Bound
+    public enum DynamicBoneBound
     {
         Outside,
         Inside
     }
 
-    public struct ColliderInfo
+    public struct DynamicBoneColliderInfo
     {
         public int Index;
         public bool IsGlobal;
-        public Bound Bound;
+        public DynamicBoneBound Bound;
         public float Height;
         public float Radius;
         public float3 Center;
-        public Direction Direction;
+        public DynamicBoneDirection Direction;
         public float Scale;
         public float3 Position;
         public quaternion Rotation;
@@ -36,23 +36,26 @@ namespace HighPerformanceDynamicBone
 
     public class DynamicBoneCollider : MonoBehaviour
     {
-        [Tooltip("是否为全局碰撞器")] [SerializeField] private bool isGlobal = false;
+        [Tooltip("是否为全局碰撞器")][SerializeField] private bool isGlobal = false;
 
-        [Tooltip("碰撞器半径")] [SerializeField] private float radius = 0.5f;
+        [Tooltip("碰撞器半径")][SerializeField] private float radius = 0.5f;
 
-        [Tooltip("高度，大于0即为胶囊体")] [SerializeField]
+        [Tooltip("高度，大于0即为胶囊体")]
+        [SerializeField]
         private float height = 0;
 
-        [Tooltip("高度的轴向")] [SerializeField] private Direction direction = Direction.Y;
+        [Tooltip("高度的轴向")][SerializeField] private DynamicBoneDirection direction = DynamicBoneDirection.Y;
 
-        [Tooltip("碰撞器中心位置， 相对于挂载物体的局部空间")] [SerializeField]
+        [Tooltip("碰撞器中心位置， 相对于挂载物体的局部空间")]
+        [SerializeField]
         private Vector3 center = Vector3.zero;
 
-        [Tooltip("把骨骼束缚在外面或里面")] [SerializeField]
-        private Bound bound = Bound.Outside;
+        [Tooltip("把骨骼束缚在外面或里面")]
+        [SerializeField]
+        private DynamicBoneBound bound = DynamicBoneBound.Outside;
 
 
-        [HideInInspector] public ColliderInfo ColliderInfo;
+        [HideInInspector] public DynamicBoneColliderInfo ColliderInfo;
 
         private bool hasInitialized;
 
@@ -72,7 +75,7 @@ namespace HighPerformanceDynamicBone
 
         private void Awake()
         {
-            ColliderInfo = new ColliderInfo
+            ColliderInfo = new DynamicBoneColliderInfo
             {
                 IsGlobal = isGlobal,
                 Center = center,
@@ -86,58 +89,58 @@ namespace HighPerformanceDynamicBone
             hasInitialized = true;
         }
 
-        private void OnDrawGizmosSelected()
-        {
-            if (!enabled)
-                return;
+        //private void OnDrawGizmosSelected()
+        //{
+        //    if (!enabled)
+        //        return;
 
-            if (bound == Bound.Outside)
-                Gizmos.color = Color.yellow;
-            else
-                Gizmos.color = Color.magenta;
-            float radius = this.radius * math.abs(transform.lossyScale.x);
-            float h = height * 0.5f - this.radius;
-            if (h <= 0)
-            {
-                Gizmos.DrawWireSphere(transform.TransformPoint(center), radius);
-            }
-            else
-            {
-                float3 c0 = center;
-                float3 c1 = center;
+        //    if (bound == DynamicBoneBound.Outside)
+        //        Gizmos.color = Color.yellow;
+        //    else
+        //        Gizmos.color = Color.magenta;
+        //    float radius = this.radius * math.abs(transform.lossyScale.x);
+        //    float h = height * 0.5f - this.radius;
+        //    if (h <= 0)
+        //    {
+        //        Gizmos.DrawWireSphere(transform.TransformPoint(center), radius);
+        //    }
+        //    else
+        //    {
+        //        float3 c0 = center;
+        //        float3 c1 = center;
 
-                switch (direction)
-                {
-                    case Direction.X:
-                        c0.x -= h;
-                        c1.x += h;
-                        break;
-                    case Direction.Y:
-                        c0.y -= h;
-                        c1.y += h;
-                        break;
-                    case Direction.Z:
-                        c0.z -= h;
-                        c1.z += h;
-                        break;
-                }
+        //        switch (direction)
+        //        {
+        //            case DynamicBoneDirection.X:
+        //                c0.x -= h;
+        //                c1.x += h;
+        //                break;
+        //            case DynamicBoneDirection.Y:
+        //                c0.y -= h;
+        //                c1.y += h;
+        //                break;
+        //            case DynamicBoneDirection.Z:
+        //                c0.z -= h;
+        //                c1.z += h;
+        //                break;
+        //        }
 
-                Gizmos.DrawWireSphere(transform.TransformPoint(c0), radius);
-                Gizmos.DrawWireSphere(transform.TransformPoint(c1), radius);
-            }
-        }
+        //        Gizmos.DrawWireSphere(transform.TransformPoint(c0), radius);
+        //        Gizmos.DrawWireSphere(transform.TransformPoint(c1), radius);
+        //    }
+        //}
 
-        public static bool HandleCollision(in ColliderInfo collider, ref float3 particlePosition,
+        public static bool HandleCollision(in DynamicBoneColliderInfo collider, ref float3 particlePosition,
             in float particleRadius)
         {
             float radius = collider.Radius * math.abs(collider.Scale);
             float h = collider.Height * 0.5f - radius;
-            
-            float3 worldPosition = Util.LocalToWorldPosition(collider.Position, collider.Rotation, collider.Center);
+
+            float3 worldPosition = DynamicBoneUtil.LocalToWorldPosition(collider.Position, collider.Rotation, collider.Center);
 
             if (h <= 0)
             {
-                return collider.Bound == Bound.Outside
+                return collider.Bound == DynamicBoneBound.Outside
                     ? OutsideSphere(ref particlePosition, particleRadius, worldPosition, radius)
                     : InsideSphere(ref particlePosition, particleRadius, worldPosition, radius);
             }
@@ -147,25 +150,25 @@ namespace HighPerformanceDynamicBone
 
             switch (collider.Direction)
             {
-                case Direction.X:
+                case DynamicBoneDirection.X:
                     center1.x -= h;
                     center2.x += h;
                     break;
-                case Direction.Y:
+                case DynamicBoneDirection.Y:
                     center1.y -= h;
                     center2.y += h;
                     break;
-                case Direction.Z:
+                case DynamicBoneDirection.Z:
                     center1.z -= h;
                     center2.z += h;
                     break;
             }
 
 
-            float3 worldCenter1 = Util.LocalToWorldPosition(collider.Position, collider.Rotation, center1);
-            float3 worldCenter2 = Util.LocalToWorldPosition(collider.Position, collider.Rotation, center2);
-            
-            return collider.Bound == Bound.Outside
+            float3 worldCenter1 = DynamicBoneUtil.LocalToWorldPosition(collider.Position, collider.Rotation, center1);
+            float3 worldCenter2 = DynamicBoneUtil.LocalToWorldPosition(collider.Position, collider.Rotation, center2);
+
+            return collider.Bound == DynamicBoneBound.Outside
                 ? OutsideCapsule(ref particlePosition, particleRadius, worldCenter1,
                     worldCenter2, radius)
                 : InsideCapsule(ref particlePosition, particleRadius, worldCenter1,

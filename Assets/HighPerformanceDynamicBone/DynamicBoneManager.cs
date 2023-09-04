@@ -6,9 +6,9 @@ using Unity.Mathematics;
 using Unity.Jobs;
 using Unity.Burst;
 using Unity.Collections;
-
 namespace HighPerformanceDynamicBone
 {
+
     public class DynamicBoneManager : MonoBehaviour
     {
         private static DynamicBoneManager instance;
@@ -32,11 +32,11 @@ namespace HighPerformanceDynamicBone
         [BurstCompile]
         private struct ColliderSetupJob : IJobParallelForTransform
         {
-            public NativeArray<ColliderInfo> ColliderArray;
+            public NativeArray<DynamicBoneColliderInfo> ColliderArray;
 
             public void Execute(int index, TransformAccess transform)
             {
-                ColliderInfo colliderInfo = ColliderArray[index];
+                DynamicBoneColliderInfo colliderInfo = ColliderArray[index];
                 colliderInfo.Position = transform.position;
                 colliderInfo.Rotation = transform.rotation;
                 // colliderInfo.Scale = transform.localScale.x;
@@ -47,15 +47,15 @@ namespace HighPerformanceDynamicBone
         [BurstCompile]
         private struct BoneSetupJob : IJobParallelForTransform
         {
-            public NativeArray<HeadInfo> HeadArray;
+            public NativeArray<DynamicBoneHeadInfo> HeadArray;
 
             public void Execute(int index, TransformAccess transform)
             {
-                HeadInfo curHeadInfo = HeadArray[index];
+                DynamicBoneHeadInfo curHeadInfo = HeadArray[index];
                 curHeadInfo.RootParentBoneWorldPosition = transform.position;
                 curHeadInfo.RootParentBoneWorldRotation = transform.rotation;
 
-                curHeadInfo.ObjectMove = transform.position - (Vector3) curHeadInfo.ObjectPrevPosition;
+                curHeadInfo.ObjectMove = transform.position - (Vector3)curHeadInfo.ObjectPrevPosition;
 
                 curHeadInfo.ObjectPrevPosition = transform.position;
                 float3 force = curHeadInfo.Gravity;
@@ -73,13 +73,13 @@ namespace HighPerformanceDynamicBone
         [BurstCompile]
         private struct UpdateParticles1Job : IJobParallelFor
         {
-            [ReadOnly] public NativeArray<HeadInfo> HeadArray;
-            public NativeArray<ParticleInfo> ParticleArray;
+            [ReadOnly] public NativeArray<DynamicBoneHeadInfo> HeadArray;
+            public NativeArray<DynamicBoneParticleInfo> ParticleArray;
 
             public void Execute(int index)
             {
                 int headIndex = index / MaxParticleLimit;
-                HeadInfo curHeadInfo = HeadArray[headIndex];
+                DynamicBoneHeadInfo curHeadInfo = HeadArray[headIndex];
 
                 int offset = index % MaxParticleLimit;
                 //每个Head及其Particle只需要计算一次就够了！
@@ -91,19 +91,19 @@ namespace HighPerformanceDynamicBone
                     for (int j = 0; j < curHeadInfo.ParticleCount; j++)
                     {
                         int pIdx = curHeadInfo.DataOffsetInGlobalArray + j;
-                        ParticleInfo p = ParticleArray[pIdx];
+                        DynamicBoneParticleInfo p = ParticleArray[pIdx];
 
 
 
                         float3 localPosition = p.LocalPosition * p.ParentScale;
                         quaternion localRotation = p.LocalRotation;
                         float3 worldPosition =
-                            Util.LocalToWorldPosition(parentPosition, parentRotation, localPosition);
+                            DynamicBoneUtil.LocalToWorldPosition(parentPosition, parentRotation, localPosition);
                         quaternion worldRotation =
-                            Util.LocalToWorldRotation(parentRotation, localRotation);
+                            DynamicBoneUtil.LocalToWorldRotation(parentRotation, localRotation);
 
-                        
-           
+
+
                         parentPosition = p.WorldPosition = worldPosition;
                         parentRotation = p.WorldRotation = worldRotation;
 
@@ -115,7 +115,7 @@ namespace HighPerformanceDynamicBone
                 if (offset >= curHeadInfo.ParticleCount) return;
 
                 int particleId = curHeadInfo.DataOffsetInGlobalArray + offset;
-                ParticleInfo particle = ParticleArray[particleId];
+                DynamicBoneParticleInfo particle = ParticleArray[particleId];
 
 
                 if (particle.ParentIndex >= 0)
@@ -148,10 +148,10 @@ namespace HighPerformanceDynamicBone
         [BurstCompile]
         private struct UpdateParticle2Job : IJobParallelFor
         {
-            [ReadOnly] public NativeArray<HeadInfo> HeadArray;
-            public NativeArray<ParticleInfo> ParticleArray;
-            [ReadOnly] public NativeArray<ColliderInfo> ColliderArray;
-            [ReadOnly] public NativeMultiHashMap<int, int> BoneColliderMatchMap;
+            [ReadOnly] public NativeArray<DynamicBoneHeadInfo> HeadArray;
+            public NativeArray<DynamicBoneParticleInfo> ParticleArray;
+            [ReadOnly] public NativeArray<DynamicBoneColliderInfo> ColliderArray;
+            [ReadOnly] public NativeParallelMultiHashMap<int, int> BoneColliderMatchMap;
 
             public void Execute(int index)
             {
@@ -159,22 +159,22 @@ namespace HighPerformanceDynamicBone
                 if (index % MaxParticleLimit == 0) return;
 
                 int headIndex = index / MaxParticleLimit;
-                HeadInfo curHeadInfo = HeadArray[headIndex];
+                DynamicBoneHeadInfo curHeadInfo = HeadArray[headIndex];
 
                 //遍历到那些空的Particle就不用再计算了
                 int offset = index % MaxParticleLimit;
                 if (offset >= curHeadInfo.ParticleCount) return;
 
                 int particleId = curHeadInfo.DataOffsetInGlobalArray + offset;
-                ParticleInfo particleInfo = ParticleArray[particleId];
+                DynamicBoneParticleInfo particleInfo = ParticleArray[particleId];
 
                 int parentParticleIndex = curHeadInfo.DataOffsetInGlobalArray + particleInfo.ParentIndex;
-                ParticleInfo parentParticleInfo = ParticleArray[parentParticleIndex];
-                
+                DynamicBoneParticleInfo parentParticleInfo = ParticleArray[parentParticleIndex];
+
                 float3 pos = particleInfo.WorldPosition;
                 float3 parentPos = parentParticleInfo.WorldPosition;
-                
-                
+
+
                 //TODO:尾节点的长度计算方法需要用math修改
                 Matrix4x4 m = float4x4.TRS(parentParticleInfo.TempWorldPosition, parentParticleInfo.WorldRotation,
                     particleInfo.ParentScale);
@@ -182,18 +182,18 @@ namespace HighPerformanceDynamicBone
                 float restLen = !particleInfo.IsEndBone
                     ? math.distance(parentPos, pos)
                     : m.MultiplyVector(particleInfo.EndOffset).magnitude;
-                
-                
+
+
                 float stiffness = math.lerp(1.0f, particleInfo.Stiffness, curHeadInfo.Weight);
                 if (stiffness > 0 || particleInfo.Elasticity > 0)
                 {
                     float4x4 em0 = float4x4.TRS(parentParticleInfo.TempWorldPosition, parentParticleInfo.WorldRotation,
                         particleInfo.ParentScale);
                     float3 restPos = math.mul(em0, new float4(particleInfo.LocalPosition.xyz, 1)).xyz;
-                    
+
                     float3 d = restPos - particleInfo.TempWorldPosition;
                     particleInfo.TempWorldPosition += d * particleInfo.Elasticity;
-                    
+
                     if (stiffness > 0)
                     {
                         d = restPos - particleInfo.TempWorldPosition;
@@ -225,9 +225,9 @@ namespace HighPerformanceDynamicBone
                 //             in particleInfo.Radius);
                 // }
 
-                
+
                 // particleInfo.WorldPosition = particleInfo.TempWorldPosition;
-                
+
                 float3 dd = parentParticleInfo.TempWorldPosition - particleInfo.TempWorldPosition;
                 float leng = math.length(dd);
                 if (leng > 0)
@@ -243,30 +243,30 @@ namespace HighPerformanceDynamicBone
         // [BurstCompile]
         // private struct ApplyToTransformJob : IJobParallelForTransform
         // {
-        //     public NativeArray<ParticleInfo> ParticleArray;
+        //     public NativeArray<DynamicBoneParticleInfo> ParticleArray;
         //
         //     public void Execute(int index, TransformAccess transform)
         //     {
-        //         ParticleInfo particleInfo = ParticleArray[index];
+        //         DynamicBoneParticleInfo particleInfo = ParticleArray[index];
         //         particleInfo.WorldPosition = particleInfo.TempWorldPosition;
         //         transform.position = particleInfo.WorldPosition;
         //         transform.rotation = particleInfo.WorldRotation;
         //         ParticleArray[index] = particleInfo;
         //     }
         // }
-        
+
         [BurstCompile]
         private struct ApplyToTransformJob : IJobParallelForTransform
         {
-            public NativeArray<ParticleInfo> ParticleArray;
-        
+            public NativeArray<DynamicBoneParticleInfo> ParticleArray;
+
             public void Execute(int index, TransformAccess transform)
             {
-                ParticleInfo particleInfo = ParticleArray[index];
-                // ParticleInfo pp = ParticleArray[particleInfo.ParentIndexInGlobalArray];
-                
-                
-                
+                DynamicBoneParticleInfo particleInfo = ParticleArray[index];
+                // DynamicBoneParticleInfo pp = ParticleArray[particleInfo.ParentIndexInGlobalArray];
+
+
+
                 particleInfo.WorldPosition = particleInfo.TempWorldPosition;
                 transform.position = particleInfo.WorldPosition;
                 transform.rotation = particleInfo.WorldRotation;
@@ -276,10 +276,10 @@ namespace HighPerformanceDynamicBone
 
         private List<DynamicBone> boneList;
         private List<DynamicBoneCollider> colliderList;
-        private NativeList<HeadInfo> headInfoList;
-        private NativeList<ParticleInfo> particleInfoList;
-        private NativeList<ColliderInfo> colliderInfoList;
-        private NativeMultiHashMap<int, int> boneColliderMatchMap;
+        private NativeList<DynamicBoneHeadInfo> headInfoList;
+        private NativeList<DynamicBoneParticleInfo> particleInfoList;
+        private NativeList<DynamicBoneColliderInfo> colliderInfoList;
+        private NativeParallelMultiHashMap<int, int> boneColliderMatchMap;
         private TransformAccessArray colliderTransformAccessArray;
         private TransformAccessArray headTransformAccessArray;
         private TransformAccessArray particleTransformAccessArray;
@@ -290,17 +290,17 @@ namespace HighPerformanceDynamicBone
             boneList = new List<DynamicBone>();
             colliderList = new List<DynamicBoneCollider>();
 
-            headInfoList = new NativeList<HeadInfo>(200, Allocator.Persistent);
+            headInfoList = new NativeList<DynamicBoneHeadInfo>(200, Allocator.Persistent);
             headTransformAccessArray = new TransformAccessArray(200, 64);
 
-            particleInfoList = new NativeList<ParticleInfo>(Allocator.Persistent);
+            particleInfoList = new NativeList<DynamicBoneParticleInfo>(Allocator.Persistent);
             particleTransformAccessArray = new TransformAccessArray(200 * MaxParticleLimit, 64);
 
-            colliderInfoList = new NativeList<ColliderInfo>(Allocator.Persistent);
+            colliderInfoList = new NativeList<DynamicBoneColliderInfo>(Allocator.Persistent);
             colliderTransformAccessArray = new TransformAccessArray(200, 64);
 
 
-            boneColliderMatchMap = new NativeMultiHashMap<int, int>(200, Allocator.Persistent);
+            boneColliderMatchMap = new NativeParallelMultiHashMap<int, int>(200, Allocator.Persistent);
         }
 
 
@@ -423,7 +423,7 @@ namespace HighPerformanceDynamicBone
             {
                 //将最末列的HeadInfo 索引设置为当前将要移除的HeadInfo 索引
                 DynamicBone lastTarget = boneList[boneList.Count - 1];
-                HeadInfo lastHeadInfo = lastTarget.ResetHeadIndexAndDataOffset(curHeadIndex);
+                DynamicBoneHeadInfo lastHeadInfo = lastTarget.ResetHeadIndexAndDataOffset(curHeadIndex);
                 headInfoList.RemoveAtSwapBack(curHeadIndex);
                 headInfoList[curHeadIndex] = lastHeadInfo;
                 headTransformAccessArray.RemoveAtSwapBack(curHeadIndex);
@@ -441,7 +441,7 @@ namespace HighPerformanceDynamicBone
         /// 当骨骼头节点除了transform以外的其他信息被修改时，更新骨骼信息
         /// </summary>
         /// <param name="headInfo"></param>
-        public void RefreshHeadInfo(in HeadInfo headInfo)
+        public void RefreshHeadInfo(in DynamicBoneHeadInfo headInfo)
         {
             headInfoList[headInfo.Index] = headInfo;
         }
@@ -451,7 +451,7 @@ namespace HighPerformanceDynamicBone
         /// </summary>
         /// <param name="particleInfoArray"></param>
         /// <param name="headOffsetInGlobalArray"></param>
-        public void RefreshParticleInfo(in NativeArray<ParticleInfo> particleInfoArray, in int headOffsetInGlobalArray)
+        public void RefreshParticleInfo(in NativeArray<DynamicBoneParticleInfo> particleInfoArray, in int headOffsetInGlobalArray)
         {
             for (int i = headOffsetInGlobalArray; i < particleInfoArray.Length + headOffsetInGlobalArray; i++)
             {
@@ -486,14 +486,14 @@ namespace HighPerformanceDynamicBone
         {
             int index = colliderList.IndexOf(target);
             if (index == -1) return; //防止重复移除
-            //TODO:移除Collider的逻辑
+                                     //TODO:移除Collider的逻辑
         }
 
         /// <summary>
         /// 当碰撞器除了transform以外的其他信息被修改时，更新碰撞器信息
         /// </summary>
         /// <param name="colliderInfo"></param>
-        public void RefreshColliderInfo(in ColliderInfo colliderInfo)
+        public void RefreshColliderInfo(in DynamicBoneColliderInfo colliderInfo)
         {
             colliderInfoList[colliderInfo.Index] = colliderInfo;
         }
@@ -510,20 +510,20 @@ namespace HighPerformanceDynamicBone
             if (boneColliderMatchMap.IsCreated) boneColliderMatchMap.Dispose();
         }
 
-        private void OnDrawGizmos()
-        {
-            Gizmos.color = Color.white;
-            for (int i = 0; i < particleInfoList.Length; ++i)
-            {
-                ParticleInfo p = particleInfoList[i];
-                if (p.NotNull && p.ParentIndex >= 0)
-                {
-                    ParticleInfo p0 = particleInfoList[p.ParentIndex];
-                    Gizmos.DrawLine(p.WorldPosition, p0.WorldPosition);
-                }
-                if (p.Radius > 0)
-                    Gizmos.DrawWireSphere(p.WorldPosition, p.Radius * 1);
-            }
-        }
+        //private void OnDrawGizmos()
+        //{
+        //    Gizmos.color = Color.white;
+        //    for (int i = 0; i < particleInfoList.Length; ++i)
+        //    {
+        //        DynamicBoneParticleInfo p = particleInfoList[i];
+        //        if (p.NotNull && p.ParentIndex >= 0)
+        //        {
+        //            DynamicBoneParticleInfo p0 = particleInfoList[p.ParentIndex];
+        //            Gizmos.DrawLine(p.WorldPosition, p0.WorldPosition);
+        //        }
+        //        if (p.Radius > 0)
+        //            Gizmos.DrawWireSphere(p.WorldPosition, p.Radius * 1);
+        //    }
+        //}
     }
 }

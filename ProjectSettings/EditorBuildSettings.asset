@@ -4,5 +4,8 @@
 EditorBuildSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 2
-  m_Scenes: []
+  m_Scenes:
+  - enabled: 1
+    path: Assets/DynamicBoneJBS/Test.unity
+    guid: 65db40488d86fb447a99db48e2faca6d
   m_configObjects: {}

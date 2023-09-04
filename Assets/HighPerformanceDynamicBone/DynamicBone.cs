@@ -6,7 +6,7 @@ using Unity.Collections;
 
 namespace HighPerformanceDynamicBone
 {
-    
+
     //        o    <-根骨骼父物体，由此读取运动信息并让骨骼进行模拟，HeadInfo中的位置旋转等信息都是这个物体的，同时也存储一些骨骼结构通用的信息
     //        |
     //        o    <-挂载DynamicBone脚本的物体，也是骨骼树形结构的根骨骼， 同时也是最上级的ParticleInfo
@@ -14,10 +14,10 @@ namespace HighPerformanceDynamicBone
     //      o  o     <-子Particle
     //     /\  /\
     //    o  oo  o     <-子Particle
-    
-    
-    
-    public struct HeadInfo
+
+
+
+    public struct DynamicBoneHeadInfo
     {
         public int Index;
         public float3 ObjectMove;
@@ -35,7 +35,7 @@ namespace HighPerformanceDynamicBone
     }
 
 
-    public struct ParticleInfo
+    public struct DynamicBoneParticleInfo
     {
         public int Index;
         public int ParentIndex;
@@ -70,65 +70,75 @@ namespace HighPerformanceDynamicBone
 
     public class DynamicBone : MonoBehaviour
     {
-        [Tooltip("运动的根骨骼")] [SerializeField] private Transform rootBoneTransform = null;
+        [Tooltip("运动的根骨骼")][SerializeField] private Transform rootBoneTransform = null;
 
-        [Tooltip("阻尼：How much the bones slowed down.")] [SerializeField] [Range(0, 1)]
-        private float damping = 0.1f;
+        [Tooltip("阻尼：How much the bones slowed down.")]
+        [SerializeField]
+        [Range(0, 1)]
+        private float damping = 0.3397f;
 
         [SerializeField] private AnimationCurve dampingDistribution = null;
 
         [Tooltip("弹性：How much the force applied to return each bone to original orientation.")]
         [SerializeField]
         [Range(0, 1)]
-        private float elasticity = 0.1f;
+        private float elasticity = 0.2757f;
 
         [SerializeField] private AnimationCurve elasticityDistribution = null;
 
-        [Tooltip("刚度：How much bone's original orientation are preserved.")] [SerializeField] [Range(0, 1)]
-        private float stiffness = 0.1f;
+        [Tooltip("刚度：How much bone's original orientation are preserved.")]
+        [SerializeField]
+        [Range(0, 1)]
+        private float stiffness = 0.6467f;
 
         [SerializeField] private AnimationCurve stiffnessDistribution = null;
 
         [Tooltip("惰性：How much character's position change is ignored in physics simulation.")]
         [SerializeField]
         [Range(0, 1)]
-        private float inert = 0;
+        private float inert = 0.645f;
 
         [SerializeField] private AnimationCurve inertDistribution = null;
 
-        [Tooltip("摩擦力：How much the bones slowed down when collide.")] [SerializeField]
+        [Tooltip("摩擦力：How much the bones slowed down when collide.")]
+        [SerializeField]
         private float friction = 0;
 
         [SerializeField] private AnimationCurve frictionDistribution = null;
 
-        [Tooltip("半径：Each bone can be a sphere to collide with colliders. Radius describe sphere's size.")] [SerializeField]
+        [Tooltip("半径：Each bone can be a sphere to collide with colliders. Radius describe sphere's size.")]
+        [SerializeField]
         private float radius = 0;
 
         [SerializeField] private AnimationCurve radiusDistribution = null;
 
-        [Tooltip("The force apply to bones. Partial force apply to character's initial pose is cancelled out.")] [SerializeField]
+        [Tooltip("The force apply to bones. Partial force apply to character's initial pose is cancelled out.")]
+        [SerializeField]
         private Vector3 gravity = Vector3.zero;
 
-        [Tooltip("The force apply to bones.")] [SerializeField]
+        [Tooltip("The force apply to bones.")]
+        [SerializeField]
         private Vector3 force = Vector3.zero;
 
         [Tooltip("如果这个值不是0，最后会添加一个新的节点")]
         [SerializeField] private float endLength = 0;
-        
+
         [Tooltip("如果这个值不是zero，最后会添加一个新的节点")]
         [SerializeField] private Vector3 endOffset = Vector3.zero;
-        
-        [Tooltip("需要和骨骼交互的碰撞器")] [SerializeField]
+
+        [Tooltip("需要和骨骼交互的碰撞器")]
+        [SerializeField]
         private DynamicBoneCollider[] colliderArray = null;
 
-        [Tooltip("从指定的节点开始后面的子节点都不会进行物理模拟")][SerializeField]
+        [Tooltip("从指定的节点开始后面的子节点都不会进行物理模拟")]
+        [SerializeField]
         private Transform[] exclusionTransformArray = null;
-        
+
         private float boneTotalLength;
-        
+
         private float weight = 1.0f;
 
-        [NonSerialized] public NativeArray<ParticleInfo> ParticleInfoArray;
+        [NonSerialized] public NativeArray<DynamicBoneParticleInfo> ParticleInfoArray;
         [NonSerialized] public Transform[] ParticleTransformArray;
 
         private int particleCount;
@@ -142,19 +152,12 @@ namespace HighPerformanceDynamicBone
         /// <summary>
         /// 此HeadInfo对应的是RootBoneParentTransform
         /// </summary>
-        [HideInInspector] public HeadInfo HeadInfo;
+        [HideInInspector] public DynamicBoneHeadInfo HeadInfo;
 
         private void OnValidate()
         {
-            if(!RootBoneParentTransform) return;
+            if (!RootBoneParentTransform) return;
             if (!hasInitialized) return;
-
-            damping = Mathf.Clamp01(damping);
-            elasticity = Mathf.Clamp01(elasticity);
-            stiffness = Mathf.Clamp01(stiffness);
-            inert = Mathf.Clamp01(inert);
-            friction = Mathf.Clamp01(friction);
-            radius = Mathf.Max(radius, 0);
 
             if (Application.isEditor && Application.isPlaying)
             {
@@ -172,10 +175,16 @@ namespace HighPerformanceDynamicBone
             {
                 rootBoneTransform = transform;
             }
+
+            damping = 0.45f;
+            elasticity = 0.05f;
+            stiffness = 0.5f;
+            inert = 0.075f;
+
             RootBoneParentTransform = rootBoneTransform.parent;
-            if(!RootBoneParentTransform) return;
-            
-            ParticleInfoArray = new NativeArray<ParticleInfo>(DynamicBoneManager.MaxParticleLimit, Allocator.Persistent);
+            if (!RootBoneParentTransform) return;
+
+            ParticleInfoArray = new NativeArray<DynamicBoneParticleInfo>(DynamicBoneManager.MaxParticleLimit, Allocator.Persistent);
             ParticleTransformArray = new Transform[DynamicBoneManager.MaxParticleLimit];
 
             SetupParticles();
@@ -183,7 +192,7 @@ namespace HighPerformanceDynamicBone
             hasInitialized = true;
         }
 
-        public HeadInfo ResetHeadIndexAndDataOffset(int headIndex)
+        public DynamicBoneHeadInfo ResetHeadIndexAndDataOffset(int headIndex)
         {
             HeadInfo.Index = headIndex;
             HeadInfo.DataOffsetInGlobalArray = headIndex * DynamicBoneManager.MaxParticleLimit;
@@ -206,7 +215,7 @@ namespace HighPerformanceDynamicBone
                 return;
 
             particleCount = 0;
-            HeadInfo = new HeadInfo
+            HeadInfo = new DynamicBoneHeadInfo
             {
                 ObjectPrevPosition = rootBoneTransform.position,
                 ObjectScale = math.abs(rootBoneTransform.lossyScale.x),
@@ -225,18 +234,18 @@ namespace HighPerformanceDynamicBone
         }
 
         //TODO:这个循环需要整理一下，目前过于混乱了
-        private void AppendParticles(Transform b, int parentIndex, float boneLength, in HeadInfo head)
+        private void AppendParticles(Transform b, int parentIndex, float boneLength, in DynamicBoneHeadInfo head)
         {
-            ParticleInfo particle = new ParticleInfo
+            DynamicBoneParticleInfo particle = new DynamicBoneParticleInfo
             {
                 Index = particleCount,
                 ParentIndex = parentIndex,
                 NotNull = true
             };
-            
+
             particleCount++;
-            
-            
+
+
             if (b != null)
             {
                 particle.LocalPosition = particle.InitLocalPosition = b.localPosition;
@@ -265,7 +274,7 @@ namespace HighPerformanceDynamicBone
                 particle.TempWorldPosition = particle.TempPrevWorldPosition = pb.TransformPoint(particle.EndOffset);
                 particle.IsEndBone = true;
             }
-                   
+
             //两Particle成一根骨，从第二个Particle开始计算骨骼长度
             if (parentIndex >= 0)
             {
@@ -273,11 +282,11 @@ namespace HighPerformanceDynamicBone
                 particle.BoneLength = boneLength;
                 boneTotalLength = math.max(boneTotalLength, boneLength);
             }
-            
+
             int index = particle.Index;
             ParticleInfoArray[particle.Index] = particle;
             ParticleTransformArray[particle.Index] = b;
-            
+
             if (b != null)
             {
                 particle.ChildCount = b.childCount;
@@ -302,7 +311,7 @@ namespace HighPerformanceDynamicBone
                         AppendParticles(b.GetChild(i), index, boneLength, in head);
                     }
                     //如果到该节点被剔除了，仍需要在最后添加一个空节点
-                    else if ( endLength > 0 || endOffset != Vector3.zero)
+                    else if (endLength > 0 || endOffset != Vector3.zero)
                     {
                         AppendParticles(null, index, boneLength, in head);
                     }
@@ -322,7 +331,7 @@ namespace HighPerformanceDynamicBone
         {
             for (int i = 0; i < ParticleInfoArray.Length; ++i)
             {
-                ParticleInfo particleInfo = ParticleInfoArray[i];
+                DynamicBoneParticleInfo particleInfo = ParticleInfoArray[i];
                 particleInfo.LocalPosition = particleInfo.InitLocalPosition;
                 particleInfo.LocalRotation = particleInfo.InitLocalRotation;
                 ParticleInfoArray[i] = particleInfo;
@@ -336,8 +345,8 @@ namespace HighPerformanceDynamicBone
 
             for (int i = 0; i < particleCount; ++i)
             {
-                ParticleInfo particle = ParticleInfoArray[i];
-                
+                DynamicBoneParticleInfo particle = ParticleInfoArray[i];
+
                 particle.Damping = damping;
                 particle.Elasticity = elasticity;
                 particle.Stiffness = stiffness;
@@ -384,5 +393,5 @@ namespace HighPerformanceDynamicBone
             ParticleInfoArray.Dispose();
         }
     }
-}
 
+}
